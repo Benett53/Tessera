@@ -169,7 +169,9 @@ Item {
 
     function info(w) {
         const tr = trackers[wid(w)];
-        const plain = w.maximizeMode === 0 && !w.fullScreen;
+        // A zone or maximising decides the size then, not the window: report
+        // the size it had on its own.
+        const plain = w.maximizeMode === 0 && !w.fullScreen && !w.tile;
         const g = (!plain && tr && tr.normal) ? tr.normal : w.frameGeometry;
         return {
             id: wid(w),
@@ -186,7 +188,11 @@ Item {
             full: w.fullScreen,
             min: w.minimized,
             above: w.keepAbove,
-            tile: tileRef(w)
+            tile: tileRef(w),
+            // Only what the user changed by hand counts as remembered size and
+            // position; programs keep sizing themselves otherwise.
+            user_pos: tr ? tr.userPos : false,
+            user_size: tr ? tr.userSize : false
         };
     }
 
@@ -281,18 +287,26 @@ Item {
         }
 
         let target = null;
-        if (r.geometry && p.w > 0 && p.h > 0) {
-            let x = p.x, y = p.y;
+        const usePos = r.geometry && (r.force_geometry || p.user_pos);
+        const useSize = r.geometry && (r.force_geometry || p.user_size);
+        if ((usePos || useSize) && p.w > 0 && p.h > 0) {
+            const cur = w.frameGeometry;
+            const width = useSize ? p.w : cur.width;
+            const height = useSize ? p.h : cur.height;
+            // A new size alone stays centred where KWin put the window.
+            let x = usePos ? p.x : cur.x + (cur.width - width) / 2;
+            let y = usePos ? p.y : cur.y + (cur.height - height) / 2;
             // Same spot relative to the screen when it lands on another one.
-            if (remembered && dest !== remembered) {
+            if (usePos && remembered && dest !== remembered) {
                 x += dest.geometry.x - remembered.geometry.x;
                 y += dest.geometry.y - remembered.geometry.y;
             }
-            target = clampRect({ x: x, y: y, width: p.w, height: p.h },
-                               Workspace.clientArea(KWin.MaximizeArea, dest, deskOf(w)));
+            const rect = clampRect({ x: x, y: y, width: width, height: height },
+                                   Workspace.clientArea(KWin.MaximizeArea, usePos ? dest : w.output, deskOf(w)));
             if (w.tile) w.tile.unmanage(w);
-            w.frameGeometry = Qt.rect(target.x, target.y, target.width, target.height);
-        } else if (r.screen && remembered && w.output !== remembered) {
+            w.frameGeometry = Qt.rect(rect.x, rect.y, rect.width, rect.height);
+            target = { rect: rect, pos: usePos, size: useSize };
+        } else if (r.screen && (r.force_geometry || p.user_pos) && remembered && w.output !== remembered) {
             Workspace.sendClientToScreen(w, remembered);
         }
 
@@ -466,21 +480,29 @@ Item {
             property var holdRect: null
             property int holdRound: 0
             property bool userMoving: false
+            // Set once the user has moved or resized the window by hand.
+            property bool userPos: false
+            property bool userSize: false
+            property var moveStart: null
 
             function snapshotNormal() {
                 const g = win.frameGeometry;
                 normal = { x: g.x, y: g.y, width: g.width, height: g.height };
             }
 
-            function hold(rect) {
-                holdRect = rect;
+            function plainState() {
+                return win.maximizeMode === 0 && !win.fullScreen && !win.tile;
+            }
+
+            function hold(target) {
+                holdRect = target;
                 holdRound = 0;
                 holdTimer.interval = 150;
                 holdTimer.restart();
             }
 
             function changed() {
-                if (!freeze && win.maximizeMode === 0 && !win.fullScreen) snapshotNormal();
+                if (!freeze && plainState()) snapshotNormal();
                 saveTimer.restart();
             }
 
@@ -493,20 +515,25 @@ Item {
                 }
             }
 
-            // Some programs size themselves once more after they appear; the
-            // remembered geometry is set again a few times unless the user has
-            // already taken the window.
+            // Some programs move or size themselves once more after they
+            // appear. What the user set is put back a few times, unless the
+            // user has taken the window by then; the rest stays the program's.
             Timer {
                 id: holdTimer
                 onTriggered: {
                     const w = tracker.win;
-                    const r = tracker.holdRect;
-                    if (!r || !w || w.deleted || tracker.userMoving || w.tile
+                    const t = tracker.holdRect;
+                    if (!t || !w || w.deleted || tracker.userMoving || w.tile
                         || w.maximizeMode !== 0 || w.fullScreen) return;
                     const g = w.frameGeometry;
-                    if (Math.abs(g.x - r.x) > 1 || Math.abs(g.y - r.y) > 1
-                        || Math.abs(g.width - r.width) > 1 || Math.abs(g.height - r.height) > 1)
-                        w.frameGeometry = Qt.rect(r.x, r.y, r.width, r.height);
+                    const r = t.rect;
+                    const want = {
+                        x: t.pos ? r.x : g.x, y: t.pos ? r.y : g.y,
+                        width: t.size ? r.width : g.width, height: t.size ? r.height : g.height
+                    };
+                    if (Math.abs(g.x - want.x) > 1 || Math.abs(g.y - want.y) > 1
+                        || Math.abs(g.width - want.width) > 1 || Math.abs(g.height - want.height) > 1)
+                        w.frameGeometry = Qt.rect(want.x, want.y, want.width, want.height);
                     tracker.holdRound++;
                     if (tracker.holdRound < 3) {
                         holdTimer.interval = tracker.holdRound === 1 ? 350 : 700;
@@ -524,11 +551,32 @@ Item {
                 function onOutputChanged() { tracker.changed(); }
                 function onMinimizedChanged() { tracker.changed(); }
                 function onKeepAboveChanged() { tracker.changed(); }
-                function onInteractiveMoveResizeStarted() { tracker.userMoving = true; }
-                function onInteractiveMoveResizeFinished() { tracker.userMoving = false; tracker.changed(); }
+                function onInteractiveMoveResizeStarted() {
+                    tracker.userMoving = true;
+                    const g = tracker.win.frameGeometry;
+                    tracker.moveStart = tracker.plainState()
+                        ? { x: g.x, y: g.y, width: g.width, height: g.height } : null;
+                }
+                function onInteractiveMoveResizeFinished() {
+                    tracker.userMoving = false;
+                    // Dropped into a zone or snapped to maximised: that is
+                    // remembered as such, not as a size.
+                    if (tracker.plainState()) {
+                        const g = tracker.win.frameGeometry;
+                        const s = tracker.moveStart;
+                        if (!s) {
+                            tracker.userPos = true;
+                        } else {
+                            if (Math.abs(g.x - s.x) > 2 || Math.abs(g.y - s.y) > 2) tracker.userPos = true;
+                            if (Math.abs(g.width - s.width) > 2 || Math.abs(g.height - s.height) > 2) tracker.userSize = true;
+                        }
+                    }
+                    tracker.moveStart = null;
+                    tracker.changed();
+                }
                 function onMaximizedAboutToChange(mode) {
                     if (mode !== 0) {
-                        if (tracker.win.maximizeMode === 0 && !tracker.win.fullScreen) tracker.snapshotNormal();
+                        if (tracker.plainState()) tracker.snapshotNormal();
                         tracker.freeze = true;
                         if (tracker.win.tile) tracker.savedTile = tracker.win.tile;
                         tracker.backToTile = false;

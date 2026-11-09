@@ -29,7 +29,11 @@ impl TesseraApp {
         widgets::card(ui, &palette, |ui| {
             type Field = fn(&mut Settings) -> &mut bool;
             let rows: [(&str, &str, Field); 7] = [
-                ("Position and size", "", |s| &mut s.restore_geometry),
+                (
+                    "Position and size",
+                    "Only what you set by hand; otherwise programs keep their own size",
+                    |s| &mut s.restore_geometry,
+                ),
                 (
                     "Screen",
                     "Falls back to the current screen when that one is gone",

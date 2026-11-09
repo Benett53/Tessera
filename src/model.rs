@@ -144,6 +144,12 @@ pub struct Placement {
     pub min: bool,
     pub above: bool,
     pub tile: Option<TileRef>,
+    /// The user moved the window by hand; `x`/`y` are theirs. Without it the
+    /// program and KWin decide where it opens.
+    pub user_pos: bool,
+    /// The user resized the window by hand; `w`/`h` are theirs. Without it
+    /// the program keeps its own size.
+    pub user_size: bool,
 }
 
 /// What the script reports about a window.
@@ -172,6 +178,9 @@ pub struct Restore {
     pub minimized: bool,
     pub above: bool,
     pub zone: bool,
+    /// Set size and position even where the user did not (arrangements,
+    /// which save everything on purpose).
+    pub force_geometry: bool,
     /// Pinned zone: put the window into zone `index` (1-based) on `output`.
     pub pin: Option<ZonePin>,
 }

@@ -2,6 +2,22 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.2 — 2026-11-09
+
+### Changed
+- Size and position are only remembered when they were set by hand. Programs
+  otherwise keep their own size, and KWin places them as usual.
+- A second window of a program with a different title (a friends list, a
+  launcher's splash) no longer takes the main window's place.
+
+### Fixed
+- Windows in a zone had the zone's size saved as their own, so they later
+  opened almost full screen.
+- Windows that resize themselves after opening were forced back to the saved
+  size several times.
+- Places saved by earlier versions without this distinction no longer change
+  size or position.
+
 ## 0.1.1 — 2026-11-09
 
 ### Fixed

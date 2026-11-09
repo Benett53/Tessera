@@ -29,7 +29,18 @@ pub fn zone_number(state: &StateView, tile: &TileRef) -> Option<usize> {
 }
 
 fn describe(state: &StateView, p: &Placement) -> String {
-    let mut parts = vec![format!("{} × {} at {}, {}", p.w, p.h, p.x, p.y)];
+    let mut parts = vec![
+        if p.user_size {
+            format!("{} × {}", p.w, p.h)
+        } else {
+            "its own size".into()
+        },
+        if p.user_pos {
+            format!("at {}, {}", p.x, p.y)
+        } else {
+            "placed by KWin".into()
+        },
+    ];
     if !p.output.is_empty() && state.topology.screens.len() > 1 {
         parts.push(p.output.clone());
     }
@@ -316,7 +327,7 @@ impl TesseraApp {
             match record.mode {
                 AppMode::Remember => {
                     if record.slots.is_empty() {
-                        ui.label(RichText::new("No position saved yet. It is saved when the window moves or closes.").size(12.5).color(palette.text_dim));
+                        ui.label(RichText::new("Nothing set by hand yet. Move or resize the window yourself and Tessera keeps that; otherwise the program keeps its own size.").size(12.5).color(palette.text_dim));
                     }
                     for (i, slot) in record.slots.iter().enumerate() {
                         ui.horizontal(|ui| {

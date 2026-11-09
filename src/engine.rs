@@ -60,6 +60,42 @@ pub fn class_key(class: &str) -> String {
     class.trim().to_lowercase()
 }
 
+/// The part of a window title a program keeps the same across documents:
+/// whatever follows the last separator, or the whole title.
+fn title_family(key: &str) -> &str {
+    [" — ", " – ", " - ", " | "]
+        .iter()
+        .filter_map(|sep| key.rfind(sep).map(|i| &key[i + sep.len()..]))
+        .min_by_key(|rest| rest.len())
+        .unwrap_or(key)
+        .trim()
+}
+
+/// Whether a window titled `key` may take a slot last used by a window
+/// titled `slot`. An unknown title on either side does not count against it.
+fn same_kind(key: &str, slot: &str) -> bool {
+    key.is_empty() || slot.is_empty() || title_family(key) == title_family(slot)
+}
+
+/// What a slot keeps when a window reports in: size and position only change
+/// when the user set them by hand. A program resizing itself, a zone or a
+/// maximised state never replaces what the user chose.
+pub fn merge_placement(old: &Placement, new: &Placement) -> Placement {
+    let mut merged = new.clone();
+    if !new.user_pos && old.user_pos {
+        merged.x = old.x;
+        merged.y = old.y;
+        merged.output = old.output.clone();
+        merged.user_pos = true;
+    }
+    if !new.user_size && old.user_size {
+        merged.w = old.w;
+        merged.h = old.h;
+        merged.user_size = true;
+    }
+    merged
+}
+
 impl Engine {
     pub fn new(config: Config, windows: WindowsFile, snapshots: SnapshotsFile) -> Self {
         Self {
@@ -116,10 +152,27 @@ impl Engine {
                 })
             })
             .collect();
+        // Same title first. Otherwise only a window of the same kind: the
+        // part of the title a program keeps the same (" — Mozilla Firefox")
+        // must match, so a launcher's splash or a friends list does not take
+        // the main window's place.
         free.iter()
             .copied()
             .find(|&i| !key.is_empty() && app.slots[i].caption_key == key)
-            .or_else(|| free.first().copied())
+            .or_else(|| {
+                free.iter()
+                    .copied()
+                    .find(|&i| same_kind(&key, &app.slots[i].caption_key))
+            })
+            // Titles that change all the time (a player showing the song) match
+            // nothing; as the only window of its program it takes the first slot.
+            .or_else(|| {
+                let alone = !self
+                    .live
+                    .iter()
+                    .any(|(other, live)| other != id && live.class == class);
+                alone.then(|| free.first().copied()).flatten()
+            })
     }
 
     fn restore_for(&self, placement: &Placement, everything: bool) -> Restore {
@@ -133,6 +186,7 @@ impl Engine {
             minimized: s.restore_minimized,
             above: everything || s.restore_above,
             zone: everything || s.restore_zone,
+            force_geometry: everything,
             pin: None,
         }
     }
@@ -290,7 +344,7 @@ impl Engine {
         };
         let slot = &mut app.slots[index];
         slot.caption_key = caption_key(&info.caption);
-        slot.placement = info.placement.clone();
+        slot.placement = merge_placement(&slot.placement, &info.placement);
         slot.updated = now();
         self.written.insert((class.clone(), index), self.tick);
         if let Some(live) = self.live.get_mut(&info.id) {
@@ -410,10 +464,21 @@ mod tests {
                 y: 0,
                 w: 800,
                 h: 600,
+                user_pos: true,
+                user_size: true,
                 ..Default::default()
             },
             ..Default::default()
         }
+    }
+
+    /// The same window, sized and placed by the program rather than the user.
+    fn by_program(mut info: WindowInfo, w: i32, h: i32) -> WindowInfo {
+        info.placement.w = w;
+        info.placement.h = h;
+        info.placement.user_pos = false;
+        info.placement.user_size = false;
+        info
     }
 
     #[test]
@@ -429,19 +494,27 @@ mod tests {
     #[test]
     fn several_windows_get_their_own_slots() {
         let mut engine = Engine::default();
-        engine.opened(&window("a", "firefox", "Mail", 0));
-        engine.opened(&window("b", "firefox", "News", 0));
-        engine.closed(&window("a", "firefox", "Mail", 100));
-        engine.closed(&window("b", "firefox", "News", 900));
+        engine.opened(&window("a", "firefox", "Mail — Mozilla Firefox", 0));
+        engine.opened(&window("b", "firefox", "News — Mozilla Firefox", 0));
+        engine.closed(&window("a", "firefox", "Mail — Mozilla Firefox", 100));
+        engine.closed(&window("b", "firefox", "News — Mozilla Firefox", 900));
         assert_eq!(engine.windows.apps["firefox"].slots.len(), 2);
 
         // Title match wins over order.
-        let r = engine.opened(&window("c", "firefox", "News", 0)).unwrap();
+        let r = engine
+            .opened(&window("c", "firefox", "News — Mozilla Firefox", 0))
+            .unwrap();
         assert_eq!(r.placement.x, 900);
-        let r = engine.opened(&window("d", "firefox", "Other", 0)).unwrap();
+        let r = engine
+            .opened(&window("d", "firefox", "Other — Mozilla Firefox", 0))
+            .unwrap();
         assert_eq!(r.placement.x, 100);
         // No third slot to restore from.
-        assert!(engine.opened(&window("e", "firefox", "Third", 0)).is_none());
+        assert!(
+            engine
+                .opened(&window("e", "firefox", "Third — Mozilla Firefox", 0))
+                .is_none()
+        );
     }
 
     #[test]
@@ -523,5 +596,90 @@ mod tests {
             engine.changed(&window(&format!("w{i}"), "konsole", "", i));
         }
         assert_eq!(engine.windows.apps["konsole"].slots.len(), MAX_SLOTS);
+    }
+
+    #[test]
+    fn a_program_sizing_itself_does_not_replace_what_the_user_set() {
+        let mut engine = Engine::default();
+        engine.opened(&window("a", "steam", "Steam", 0));
+        engine.changed(&window("a", "steam", "Steam", 300));
+        // The program grows its window later, or a zone sizes it.
+        engine.closed(&by_program(window("a", "steam", "Steam", 0), 2400, 1440));
+        let slot = &engine.windows.apps["steam"].slots[0].placement;
+        assert_eq!((slot.x, slot.w, slot.h), (300, 800, 600));
+        assert!(slot.user_pos && slot.user_size);
+    }
+
+    #[test]
+    fn sizes_nobody_set_by_hand_are_not_marked_as_the_users() {
+        let mut engine = Engine::default();
+        engine.opened(&window("a", "vesktop", "Discord", 0));
+        engine.closed(&by_program(
+            window("a", "vesktop", "Discord", 0),
+            1800,
+            1200,
+        ));
+        let r = engine
+            .opened(&by_program(window("b", "vesktop", "Discord", 0), 900, 700))
+            .unwrap();
+        assert!(!r.placement.user_pos && !r.placement.user_size);
+        assert!(!r.force_geometry);
+    }
+
+    #[test]
+    fn entries_saved_before_the_markers_count_as_not_set_by_hand() {
+        let old: Placement =
+            serde_json::from_str(r#"{"output":"DP-1","x":0,"y":0,"w":2402,"h":1440}"#).unwrap();
+        assert!(!old.user_pos && !old.user_size);
+    }
+
+    #[test]
+    fn a_second_window_with_another_title_gets_its_own_slot() {
+        let mut engine = Engine::default();
+        engine.opened(&window("main", "steam", "Steam", 0));
+        engine.closed(&window("main", "steam", "Steam", 100));
+        // Main window open again, then the friends list next to it.
+        engine.opened(&window("main2", "steam", "Steam", 0));
+        assert!(
+            engine
+                .opened(&window("friends", "steam", "Friends List", 0))
+                .is_none()
+        );
+        engine.closed(&window("friends", "steam", "Friends List", 2000));
+        assert_eq!(engine.windows.apps["steam"].slots.len(), 2);
+        assert_eq!(engine.windows.apps["steam"].slots[0].placement.x, 100);
+    }
+
+    #[test]
+    fn a_lone_window_with_a_changing_title_still_finds_its_slot() {
+        let mut engine = Engine::default();
+        engine.opened(&window("a", "spotify", "Spotify Premium", 0));
+        engine.closed(&window("a", "spotify", "Artist - Song", 420));
+        let r = engine
+            .opened(&window("b", "spotify", "Spotify Premium", 0))
+            .unwrap();
+        assert_eq!(r.placement.x, 420);
+    }
+
+    #[test]
+    fn arrangements_set_everything() {
+        let mut engine = Engine::default();
+        engine.opened(&window("a", "kate", "notes", 0));
+        let snapshot = engine.snapshot_from(
+            "s".into(),
+            "Work".into(),
+            &[by_program(window("x", "kate", "notes", 500), 900, 900)],
+        );
+        let (moves, _) = engine.plan_restore(&snapshot);
+        assert!(moves[0].1.force_geometry);
+    }
+
+    #[test]
+    fn title_families() {
+        assert_eq!(title_family("inbox — mozilla firefox"), "mozilla firefox");
+        assert_eq!(title_family("a - b — kate"), "kate");
+        assert_eq!(title_family("steam"), "steam");
+        assert!(same_kind("", "steam"));
+        assert!(!same_kind("friends list", "steam"));
     }
 }
