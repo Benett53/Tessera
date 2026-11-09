@@ -2,6 +2,14 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.1.1 — 2026-11-09
+
+### Fixed
+- Closing a window did not reach the service, so the next window of that
+  program found its remembered place still taken and opened where KWin put it.
+- An updated KWin script could stay unstarted after other scripts had been
+  turned off in the same session.
+
 ## 0.1.0 — 2026-11-09
 
 ### Added

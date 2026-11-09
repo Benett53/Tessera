@@ -212,12 +212,16 @@ pub fn enable(reload: bool) -> Result<(), String> {
     if id < 0 {
         return Err("KWin refused to load the script".into());
     }
+    // `start` runs every loaded script that is not running yet. Calling
+    // `run` on `/Scripting/Script<id>` is not reliable: KWin numbers scripts
+    // by how many are loaded, so after an unload the id can belong to an
+    // older script and the call reaches that one instead.
     connection
         .call_method(
             Some("org.kde.KWin"),
-            &*format!("/Scripting/Script{id}"),
-            Some("org.kde.kwin.Script"),
-            "run",
+            "/Scripting",
+            Some("org.kde.kwin.Scripting"),
+            "start",
             &(),
         )
         .map(|_| ())

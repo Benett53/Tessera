@@ -121,9 +121,15 @@ Item {
 
     // ---------------------------------------------------------- windows --
 
-    function managed(w) {
-        return w && !w.deleted && w.normalWindow && !w.transient && !w.skipTaskbar
+    // Windows Tessera remembers. `deleted` is already set while KWin reports a
+    // window as removed, so closing checks `remembered` instead of `managed`.
+    function remembered(w) {
+        return w && w.normalWindow && !w.transient && !w.skipTaskbar
             && w.resourceClass && w.resourceClass.length > 0;
+    }
+
+    function managed(w) {
+        return remembered(w) && !w.deleted;
     }
 
     function wid(w) {
@@ -567,7 +573,9 @@ Item {
         }
         function onWindowRemoved(w) {
             const id = root.wid(w);
-            if (root.connected && root.managed(w)) root.call("Closed", [JSON.stringify(root.info(w))]);
+            if (root.connected && root.remembered(w)) {
+                try { root.call("Closed", [JSON.stringify(root.info(w))]); } catch (e) { console.log("tessera: " + e); }
+            }
             const t = root.trackers[id];
             if (t) {
                 delete root.trackers[id];
