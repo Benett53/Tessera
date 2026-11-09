@@ -1,0 +1,556 @@
+{
+ "revision": 1,
+ "version": "0.1.0",
+ "config": {
+  "version": 1,
+  "settings": {},
+  "layouts": [
+   {
+    "id": "l1",
+    "name": "Coding",
+    "tree": {
+     "s": 1,
+     "d": 1,
+     "c": [
+      {
+       "s": 0.6
+      },
+      {
+       "s": 0.4,
+       "d": 2,
+       "c": [
+        {
+         "s": 0.6
+        },
+        {
+         "s": 0.4
+        }
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "id": "l2",
+    "name": "Two halves",
+    "tree": {
+     "s": 1,
+     "d": 1,
+     "c": [
+      {
+       "s": 0.5
+      },
+      {
+       "s": 0.5
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "apps": {
+  "firefox": {
+   "desktop_file": "firefox",
+   "mode": "remember",
+   "pin": null,
+   "slots": [
+    {
+     "caption_key": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 860,
+      "y": 0,
+      "w": 1720,
+      "h": 1440,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": {
+       "output": "DP-1",
+       "desktop": "d1",
+       "rect": [
+        0.25,
+        0,
+        0.5,
+        1
+       ]
+      }
+     },
+     "updated": 0
+    },
+    {
+     "caption_key": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 400,
+      "y": 200,
+      "w": 1400,
+      "h": 900,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": null
+     },
+     "updated": 0
+    }
+   ],
+   "last_seen": 0
+  },
+  "org.kde.dolphin": {
+   "desktop_file": "org.kde.dolphin",
+   "mode": "remember",
+   "pin": null,
+   "slots": [
+    {
+     "caption_key": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 0,
+      "y": 0,
+      "w": 860,
+      "h": 1440,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": {
+       "output": "DP-1",
+       "desktop": "d1",
+       "rect": [
+        0,
+        0,
+        0.25,
+        1
+       ]
+      }
+     },
+     "updated": 0
+    }
+   ],
+   "last_seen": 0
+  },
+  "org.kde.konsole": {
+   "desktop_file": "org.kde.konsole",
+   "mode": "zone",
+   "pin": {
+    "output": "DP-1",
+    "index": 4
+   },
+   "slots": [],
+   "last_seen": 0
+  },
+  "org.kde.kate": {
+   "desktop_file": "org.kde.kate",
+   "mode": "remember",
+   "pin": null,
+   "slots": [
+    {
+     "caption_key": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 2580,
+      "y": 0,
+      "w": 860,
+      "h": 720,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": {
+       "output": "DP-1",
+       "desktop": "d1",
+       "rect": [
+        0.75,
+        0,
+        0.25,
+        0.5
+       ]
+      }
+     },
+     "updated": 0
+    }
+   ],
+   "last_seen": 0
+  },
+  "thunderbird": {
+   "desktop_file": "thunderbird",
+   "mode": "remember",
+   "pin": null,
+   "slots": [
+    {
+     "caption_key": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 300,
+      "y": 150,
+      "w": 1600,
+      "h": 1000,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": null
+     },
+     "updated": 0
+    }
+   ],
+   "last_seen": 0
+  },
+  "org.kde.kcalc": {
+   "desktop_file": "org.kde.kcalc",
+   "mode": "remember",
+   "pin": null,
+   "slots": [
+    {
+     "caption_key": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 2900,
+      "y": 900,
+      "w": 420,
+      "h": 520,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": null
+     },
+     "updated": 0
+    }
+   ],
+   "last_seen": 0
+  },
+  "org.kde.gwenview": {
+   "desktop_file": "org.kde.gwenview",
+   "mode": "ignore",
+   "pin": null,
+   "slots": [],
+   "last_seen": 0
+  }
+ },
+ "running": [
+  "firefox",
+  "org.kde.dolphin",
+  "org.kde.konsole",
+  "org.kde.kate"
+ ],
+ "snapshots": [
+  {
+   "id": "quick",
+   "name": "Quick save",
+   "created": 1794245088,
+   "screens": [
+    {
+     "name": "DP-1",
+     "x": 0,
+     "y": 0,
+     "w": 3440,
+     "h": 1440,
+     "manufacturer": "",
+     "model": ""
+    }
+   ],
+   "windows": [
+    {
+     "class": "org.kde.dolphin",
+     "desktop_file": "org.kde.dolphin",
+     "caption": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 0,
+      "y": 0,
+      "w": 860,
+      "h": 1440,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": {
+       "output": "DP-1",
+       "desktop": "d1",
+       "rect": [
+        0,
+        0,
+        0.25,
+        1
+       ]
+      }
+     }
+    },
+    {
+     "class": "firefox",
+     "desktop_file": "firefox",
+     "caption": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 860,
+      "y": 0,
+      "w": 1720,
+      "h": 1440,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": {
+       "output": "DP-1",
+       "desktop": "d1",
+       "rect": [
+        0.25,
+        0,
+        0.5,
+        1
+       ]
+      }
+     }
+    },
+    {
+     "class": "org.kde.kate",
+     "desktop_file": "org.kde.kate",
+     "caption": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 2580,
+      "y": 0,
+      "w": 860,
+      "h": 720,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": {
+       "output": "DP-1",
+       "desktop": "d1",
+       "rect": [
+        0.75,
+        0,
+        0.25,
+        0.5
+       ]
+      }
+     }
+    },
+    {
+     "class": "org.kde.konsole",
+     "desktop_file": "org.kde.konsole",
+     "caption": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 2580,
+      "y": 720,
+      "w": 860,
+      "h": 720,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": {
+       "output": "DP-1",
+       "desktop": "d1",
+       "rect": [
+        0.75,
+        0.5,
+        0.25,
+        0.5
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "a2",
+   "name": "Mail and web",
+   "created": 1793986308,
+   "screens": [
+    {
+     "name": "DP-1",
+     "x": 0,
+     "y": 0,
+     "w": 3440,
+     "h": 1440,
+     "manufacturer": "",
+     "model": ""
+    }
+   ],
+   "windows": [
+    {
+     "class": "thunderbird",
+     "desktop_file": "thunderbird",
+     "caption": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 0,
+      "y": 0,
+      "w": 1720,
+      "h": 1440,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": null
+     }
+    },
+    {
+     "class": "firefox",
+     "desktop_file": "firefox",
+     "caption": "",
+     "placement": {
+      "output": "DP-1",
+      "x": 1720,
+      "y": 0,
+      "w": 1720,
+      "h": 1440,
+      "desktops": [
+       "d1"
+      ],
+      "all_desktops": false,
+      "max": 0,
+      "full": false,
+      "min": false,
+      "above": false,
+      "tile": null
+     }
+    }
+   ]
+  }
+ ],
+ "topology": {
+  "screens": [
+   {
+    "name": "DP-1",
+    "x": 0,
+    "y": 0,
+    "w": 3440,
+    "h": 1440,
+    "manufacturer": "",
+    "model": ""
+   }
+  ],
+  "desktops": [
+   {
+    "id": "d1",
+    "name": "Desktop 1"
+   },
+   {
+    "id": "d2",
+    "name": "Desktop 2"
+   }
+  ],
+  "current_desktop": "d1"
+ },
+ "zones": [
+  {
+   "output": "DP-1",
+   "desktop": "d1",
+   "tree": {
+    "s": 1,
+    "d": 1,
+    "c": [
+     {
+      "s": 0.25
+     },
+     {
+      "s": 0.5
+     },
+     {
+      "s": 0.25,
+      "d": 2,
+      "c": [
+       {
+        "s": 0.5
+       },
+       {
+        "s": 0.5
+       }
+      ]
+     }
+    ]
+   },
+   "padding": 8
+  },
+  {
+   "output": "DP-1",
+   "desktop": "d2",
+   "tree": {
+    "s": 1,
+    "d": 1,
+    "c": [
+     {
+      "s": 0.25
+     },
+     {
+      "s": 0.5
+     },
+     {
+      "s": 0.25,
+      "d": 2,
+      "c": [
+       {
+        "s": 0.5
+       },
+       {
+        "s": 0.5
+       }
+      ]
+     }
+    ]
+   },
+   "padding": 8
+  }
+ ],
+ "script": {
+  "installed": true,
+  "enabled": true,
+  "connected": true,
+  "version": "0.1.0"
+ },
+ "conflicts": [],
+ "paused": false,
+ "data_dir": "~/.local/share/tessera"
+}

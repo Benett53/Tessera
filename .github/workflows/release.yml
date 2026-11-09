@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Built on the oldest supported Ubuntu so the binary runs on any glibc
+  # from 2.35 on, which covers every current desktop distribution.
+  release:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust and build dependencies
+        run: |
+          rustup toolchain install stable --profile minimal
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pkg-config libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev
+
+      - name: Version from the tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || version=0.0.0
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          mkdir -p dist/Tessera/icons
+          cp target/release/tessera dist/Tessera/
+          cp packaging/linux/install.sh packaging/linux/uninstall.sh packaging/linux/tessera.desktop dist/Tessera/
+          for size in 32 48 64 128 256; do cp assets/icon-$size.png dist/Tessera/icons/tessera-$size.png; done
+          tar -C dist -czf tessera-linux-x86_64.tar.gz Tessera
+          cp target/release/tessera tessera-linux-x86_64
+          ls -la tessera-linux-x86_64.tar.gz tessera-linux-x86_64
+
+      # Checksums and their signature are what the in-app updater trusts.
+      - name: Checksums and signature
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          sha256sum tessera-linux-x86_64.tar.gz tessera-linux-x86_64 > SHA256SUMS
+          cat SHA256SUMS
+          cargo run --quiet --release --manifest-path tools/sign/Cargo.toml -- sign SHA256SUMS "Tessera ${GITHUB_REF_NAME}" > SHA256SUMS.minisig
+
+      # Only this version's section, so the notes do not repeat the history.
+      - name: Release notes for this version
+        run: |
+          awk -v v="${{ steps.version.outputs.version }}" '
+            /^## / { if (found) exit; if (index($0, "## " v) == 1) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          cat notes.md
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            tessera-linux-x86_64.tar.gz
+            tessera-linux-x86_64
+            SHA256SUMS
+            SHA256SUMS.minisig
+          body_path: notes.md
+          draft: false

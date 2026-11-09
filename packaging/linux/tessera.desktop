@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tessera
+GenericName=Window Zones
+Comment=Window zones and remembered window positions
+Exec=tessera
+Icon=tessera
+Terminal=false
+Categories=Utility;Settings;DesktopSettings;Qt;KDE;
+Keywords=window;zones;tiling;layout;position;remember;snap;fancyzones;
+StartupWMClass=tessera
+StartupNotify=true
