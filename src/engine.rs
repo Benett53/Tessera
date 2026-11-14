@@ -114,6 +114,28 @@ impl Engine {
         &self.config.settings
     }
 
+    /// Window classes that automatic tiling leaves floating: the ignore list
+    /// and programs set to "leave alone". Matched by the KWin script with the
+    /// same rules as [`pattern_matches`].
+    pub fn float_patterns(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .settings()
+            .ignore
+            .iter()
+            .map(|p| class_key(p))
+            .collect();
+        out.extend(
+            self.windows
+                .apps
+                .iter()
+                .filter(|(_, app)| app.mode == AppMode::Ignore)
+                .map(|(key, _)| key.clone()),
+        );
+        out.sort();
+        out.dedup();
+        out
+    }
+
     pub fn is_ignored(&self, class: &str) -> bool {
         let key = class_key(class);
         key.is_empty()
@@ -452,6 +474,24 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn programs_left_alone_float_when_tiling() {
+        let mut engine = Engine::default();
+        engine.config.settings.ignore = vec!["Steam_App_*".into()];
+        engine.windows.apps.insert(
+            "gimp".into(),
+            AppRecord {
+                mode: AppMode::Ignore,
+                ..Default::default()
+            },
+        );
+        engine
+            .windows
+            .apps
+            .insert("kate".into(), AppRecord::default());
+        assert_eq!(engine.float_patterns(), vec!["gimp", "steam_app_*"]);
+    }
 
     fn window(id: &str, class: &str, caption: &str, x: i32) -> WindowInfo {
         WindowInfo {

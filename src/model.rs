@@ -27,6 +27,12 @@ pub struct Settings {
     pub restore_zone: bool,
     /// A maximised window returns to its zone when it is restored.
     pub zone_after_unmaximize: bool,
+    /// Automatic tiling: new windows split the space of the focused one.
+    pub tiling: bool,
+    /// Space between tiled windows, in pixels.
+    pub tiling_gap: u32,
+    /// Space between tiled windows and the edges of the screen, in pixels.
+    pub tiling_outer_gap: u32,
     /// Programs that are never moved. `*` matches any run of characters.
     pub ignore: Vec<String>,
     /// Start programs from an arrangement that are not running.
@@ -51,6 +57,9 @@ impl Default for Settings {
             restore_above: true,
             restore_zone: true,
             zone_after_unmaximize: true,
+            tiling: false,
+            tiling_gap: 10,
+            tiling_outer_gap: 10,
             ignore: default_ignore(),
             launch_missing: false,
             tray: true,
@@ -427,6 +436,15 @@ pub fn caption_key(caption: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tiling_is_off_unless_turned_on() {
+        assert!(!Settings::default().tiling);
+        // A config written before tiling existed keeps it off.
+        let old: Settings = serde_json::from_str(r#"{ "remember": true }"#).unwrap();
+        assert!(!old.tiling);
+        assert_eq!(old.tiling_gap, 10);
+    }
 
     #[test]
     fn wildcard_patterns() {
