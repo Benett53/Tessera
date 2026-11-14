@@ -14,8 +14,46 @@ use sha2::{Digest, Sha256};
 
 use crate::model::Conflict;
 
-pub const PLUGIN_ID: &str = "tessera";
-const SOURCE: &str = include_str!("../kwin/main.qml");
+/// One KWin script package that Tessera writes and loads.
+struct Script {
+    id: &'static str,
+    name: &'static str,
+    description: &'static str,
+    /// `declarativescript` or `javascript`.
+    api: &'static str,
+    /// Folder below `contents/` that holds the code.
+    folder: &'static str,
+    file: &'static str,
+    /// The Scripting method that loads this kind of script.
+    loader: &'static str,
+    source: &'static str,
+}
+
+/// Reports windows, places them, builds tiles, registers shortcuts.
+const MAIN: Script = Script {
+    id: "tessera",
+    name: "Tessera",
+    description: "Window zones and remembered window positions. Managed by the Tessera app.",
+    api: "declarativescript",
+    folder: "ui",
+    file: "main.qml",
+    loader: "loadDeclarativeScript",
+    source: include_str!("../kwin/main.qml"),
+};
+
+/// Entries in the window menu, which KWin offers only to JavaScript scripts.
+const MENU: Script = Script {
+    id: "tessera-menu",
+    name: "Tessera window menu",
+    description: "Tessera's entries in the window menu. Managed by the Tessera app.",
+    api: "javascript",
+    folder: "code",
+    file: "main.js",
+    loader: "loadScript",
+    source: include_str!("../kwin/menu.js"),
+};
+
+const SCRIPTS: [&Script; 2] = [&MAIN, &MENU];
 
 /// Scripts that also move windows when they open or manage zones.
 const CONFLICTS: &[(&str, &str, &str)] = &[
@@ -43,53 +81,60 @@ fn scripts_dir() -> PathBuf {
         .join("kwin/scripts")
 }
 
-pub fn script_dir() -> PathBuf {
-    scripts_dir().join(PLUGIN_ID)
+fn script_dir(script: &Script) -> PathBuf {
+    scripts_dir().join(script.id)
 }
 
-fn source() -> String {
-    SOURCE.replace("@VERSION@", env!("CARGO_PKG_VERSION"))
+fn source(script: &Script) -> String {
+    script
+        .source
+        .replace("@VERSION@", env!("CARGO_PKG_VERSION"))
 }
 
-fn main_file_name(source: &str) -> String {
+fn main_file_name(script: &Script, source: &str) -> String {
     let hash = Sha256::digest(source.as_bytes());
     let short: String = hash.iter().take(5).map(|b| format!("{b:02x}")).collect();
-    format!("v{short}/main.qml")
+    format!("v{short}/{}", script.file)
 }
 
-fn metadata(main: &str) -> String {
+fn metadata(script: &Script, main: &str) -> String {
     format!(
         r#"{{
     "KPlugin": {{
-        "Id": "{PLUGIN_ID}",
-        "Name": "Tessera",
-        "Description": "Window zones and remembered window positions. Managed by the Tessera app.",
+        "Id": "{id}",
+        "Name": "{name}",
+        "Description": "{description}",
         "Icon": "tessera",
         "Version": "{version}",
         "License": "MIT",
         "Authors": [{{ "Name": "Tessera" }}]
     }},
-    "X-Plasma-API": "declarativescript",
-    "X-Plasma-MainScript": "ui/{main}",
+    "X-Plasma-API": "{api}",
+    "X-Plasma-MainScript": "{folder}/{main}",
     "KPackageStructure": "KWin/Script"
 }}
 "#,
+        id = script.id,
+        name = script.name,
+        description = script.description,
+        api = script.api,
+        folder = script.folder,
         version = env!("CARGO_PKG_VERSION"),
     )
 }
 
-/// Write the script if it is missing or outdated. Returns whether anything
+/// Write one script if it is missing or outdated. Returns whether anything
 /// changed, in which case KWin needs to load it again.
-pub fn install() -> Result<bool, String> {
-    let dir = script_dir();
-    let source = source();
-    let main = main_file_name(&source);
-    let ui = dir.join("contents/ui");
-    if ui.join(&main).exists() && dir.join("metadata.json").exists() {
+fn install_script(script: &Script) -> Result<bool, String> {
+    let dir = script_dir(script);
+    let source = source(script);
+    let main = main_file_name(script, &source);
+    let code = dir.join("contents").join(script.folder);
+    if code.join(&main).exists() && dir.join("metadata.json").exists() {
         return Ok(false);
     }
     // Older versions go; the one KWin is running stays loaded from memory.
-    if let Ok(entries) = std::fs::read_dir(&ui) {
+    if let Ok(entries) = std::fs::read_dir(&code) {
         for entry in entries.flatten() {
             let path = entry.path();
             let _ = if path.is_dir() {
@@ -99,17 +144,28 @@ pub fn install() -> Result<bool, String> {
             };
         }
     }
-    let file = ui.join(&main);
+    let file = code.join(&main);
     if let Some(parent) = file.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     std::fs::write(&file, source).map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("metadata.json"), metadata(&main)).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("metadata.json"), metadata(script, &main))
+        .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
+/// Write all scripts that are missing or outdated. Returns whether anything
+/// changed.
+pub fn install() -> Result<bool, String> {
+    let mut changed = false;
+    for script in SCRIPTS {
+        changed |= install_script(script)?;
+    }
+    Ok(changed)
+}
+
 pub fn is_installed() -> bool {
-    script_dir().join("metadata.json").exists()
+    script_dir(&MAIN).join("metadata.json").exists()
 }
 
 fn read_plugin(id: &str) -> Option<bool> {
@@ -142,7 +198,7 @@ fn write_plugin(id: &str, enabled: bool) -> Result<(), String> {
 }
 
 pub fn is_enabled() -> bool {
-    read_plugin(PLUGIN_ID) == Some(true)
+    read_plugin(MAIN.id) == Some(true)
 }
 
 fn kwin_call(
@@ -161,28 +217,36 @@ fn kwin_call(
     result.map_err(|e| e.to_string())
 }
 
-pub fn is_loaded() -> bool {
+fn is_loaded(id: &str) -> bool {
     kwin_call(
         "/Scripting",
         "org.kde.kwin.Scripting",
         "isScriptLoaded",
-        Some(PLUGIN_ID),
+        Some(id),
     )
     .ok()
     .and_then(|m| m.body().deserialize::<bool>().ok())
     .unwrap_or(false)
 }
 
-/// Enable the script for future logins and run the installed version now.
+/// Enable all scripts for future logins and run the installed versions now.
+pub fn enable(reload: bool) -> Result<(), String> {
+    for script in SCRIPTS {
+        enable_script(script, reload)?;
+    }
+    Ok(())
+}
+
+/// Enable one script for future logins and run the installed version now.
 ///
 /// KWin's own loading of enabled scripts (`reconfigure`) works from metadata
 /// it read when the session started, so a script installed or updated later
 /// is loaded directly instead.
-pub fn enable(reload: bool) -> Result<(), String> {
-    if !is_enabled() {
-        write_plugin(PLUGIN_ID, true)?;
+fn enable_script(script: &Script, reload: bool) -> Result<(), String> {
+    if read_plugin(script.id) != Some(true) {
+        write_plugin(script.id, true)?;
     }
-    if is_loaded() {
+    if is_loaded(script.id) {
         if !reload {
             return Ok(());
         }
@@ -190,20 +254,21 @@ pub fn enable(reload: bool) -> Result<(), String> {
             "/Scripting",
             "org.kde.kwin.Scripting",
             "unloadScript",
-            Some(PLUGIN_ID),
+            Some(script.id),
         );
     }
-    let main = script_dir()
-        .join("contents/ui")
-        .join(main_file_name(&source()));
+    let main = script_dir(script)
+        .join("contents")
+        .join(script.folder)
+        .join(main_file_name(script, &source(script)));
     let connection = zbus::blocking::Connection::session().map_err(|e| e.to_string())?;
     let id: i32 = connection
         .call_method(
             Some("org.kde.KWin"),
             "/Scripting",
             Some("org.kde.kwin.Scripting"),
-            "loadDeclarativeScript",
-            &(main.to_string_lossy().as_ref(), PLUGIN_ID),
+            script.loader,
+            &(main.to_string_lossy().as_ref(), script.id),
         )
         .map_err(|e| e.to_string())?
         .body()
@@ -228,26 +293,38 @@ pub fn enable(reload: bool) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Install, enable and load. Called when the service starts.
+/// Install, enable and load. Called when the service starts. The window
+/// menu is tried even when the main script fails, and the other way round.
 pub fn ensure() -> Result<(), String> {
-    let changed = install()?;
-    enable(changed)
+    let mut errors = Vec::new();
+    for script in SCRIPTS {
+        if let Err(e) = install_script(script).and_then(|changed| enable_script(script, changed)) {
+            errors.push(format!("{}: {e}", script.id));
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
-/// Turn the script off and remove it. Used by `tessera --uninstall-script`.
+/// Turn the scripts off and remove them. Used by `tessera --remove-kwin-script`.
 pub fn remove() -> Result<(), String> {
-    let _ = Command::new("kwriteconfig6")
-        .args(["--file", "kwinrc", "--group", "Plugins", "--key"])
-        .arg(format!("{PLUGIN_ID}Enabled"))
-        .arg("--delete")
-        .status();
-    let _ = kwin_call(
-        "/Scripting",
-        "org.kde.kwin.Scripting",
-        "unloadScript",
-        Some(PLUGIN_ID),
-    );
-    let _ = std::fs::remove_dir_all(script_dir());
+    for script in SCRIPTS {
+        let _ = Command::new("kwriteconfig6")
+            .args(["--file", "kwinrc", "--group", "Plugins", "--key"])
+            .arg(format!("{}Enabled", script.id))
+            .arg("--delete")
+            .status();
+        let _ = kwin_call(
+            "/Scripting",
+            "org.kde.kwin.Scripting",
+            "unloadScript",
+            Some(script.id),
+        );
+        let _ = std::fs::remove_dir_all(script_dir(script));
+    }
     kwin_call("/KWin", "org.kde.KWin", "reconfigure", None).map(|_| ())
 }
 
@@ -296,15 +373,31 @@ mod tests {
 
     #[test]
     fn source_has_its_version_filled_in() {
-        let source = source();
+        let source = source(&MAIN);
         assert!(!source.contains("@VERSION@"));
         assert!(source.contains(env!("CARGO_PKG_VERSION")));
     }
 
     #[test]
     fn main_file_changes_with_the_content() {
-        assert_ne!(main_file_name("a"), main_file_name("b"));
-        assert!(main_file_name("a").ends_with("/main.qml"));
-        assert!(metadata("vx/main.qml").contains("\"ui/vx/main.qml\""));
+        assert_ne!(main_file_name(&MAIN, "a"), main_file_name(&MAIN, "b"));
+        assert!(main_file_name(&MAIN, "a").ends_with("/main.qml"));
+        assert!(metadata(&MAIN, "vx/main.qml").contains("\"ui/vx/main.qml\""));
+    }
+
+    #[test]
+    fn the_window_menu_is_a_javascript_package() {
+        let main = main_file_name(&MENU, &source(&MENU));
+        assert!(main.ends_with("/main.js"));
+        let meta = metadata(&MENU, &main);
+        assert!(meta.contains("\"X-Plasma-API\": \"javascript\""));
+        assert!(meta.contains(&format!("\"code/{main}\"")));
+        assert!(meta.contains("\"Id\": \"tessera-menu\""));
+        assert!(source(&MENU).contains("registerUserActionsMenu"));
+    }
+
+    #[test]
+    fn every_script_has_its_own_folder() {
+        assert_ne!(script_dir(&MAIN), script_dir(&MENU));
     }
 }

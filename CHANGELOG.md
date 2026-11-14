@@ -2,6 +2,13 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+- "Center Window" in the window menu (right click on the title bar or
+  Alt+F3, under Extensions). Takes the window out of its zone or maximised
+  state and centres it on its screen.
+
 ## 0.1.2 — 2026-11-09
 
 ### Changed
