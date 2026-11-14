@@ -24,6 +24,7 @@ open where its window was last closed.
   are not running can be started or placed when they open
 - A maximised window goes back into its zone when restored
 - Shortcuts for moving windows between zones
+- "Center Window" in the window menu (title bar right click, under Extensions)
 - Pause restoring from the tray, a shortcut or the command line
 - Warns about other KWin scripts that move windows too and can turn them off
 - Tray icon, start at login, updates from the settings
@@ -118,14 +119,15 @@ left alone by default.
 | Part | Responsibility |
 |---|---|
 | `kwin/main.qml` | KWin script: reports windows, places them, builds tiles, registers shortcuts |
+| `kwin/menu.js` | Second KWin script for the window menu entries (KWin offers the menu only to JavaScript scripts) |
 | `src/daemon.rs` | Background service on the session bus (`app.tessera.Daemon`), tray icon |
 | `src/engine.rs` | Which remembered slot a window gets, what to restore, arrangements |
 | `src/layout.rs` | Zone layouts as a split tree, the same shape as KWin's tiles |
-| `src/kwin.rs` | Installs and loads the KWin script, finds conflicting scripts |
+| `src/kwin.rs` | Installs and loads the KWin scripts, finds conflicting scripts |
 | `src/ui/` | The window: overview, zone editor, windows, arrangements, settings |
 
-The service owns all data and installs the KWin script into
-`~/.local/share/kwin/scripts/tessera`. The script calls the service for every
+The service owns all data and installs the KWin scripts into
+`~/.local/share/kwin/scripts/tessera` and `tessera-menu`. The script calls the service for every
 window that opens, moves or closes, and fetches commands with a long-poll. The
 window is a separate process that only talks to the service, so closing it
 changes nothing.

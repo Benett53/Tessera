@@ -4,6 +4,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+- "Center Window" in the window menu (right click on the title bar or
+  Alt+F3, under Extensions). Takes the window out of its zone or maximised
+  state and centres it on its screen.
+
 ### Security
 - Linux: the updater downloaded into a folder with a fixed name in the shared
   temporary directory. Another local user could prepare that folder and swap
