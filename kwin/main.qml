@@ -55,6 +55,7 @@ Item {
             connected = true;
             try { cfg = JSON.parse(ret); } catch (e) {}
             sendTopology();
+            syncTiling();
             const list = [];
             const all = Workspace.windows;
             for (let i = 0; i < all.length; i++) {
@@ -90,6 +91,7 @@ Item {
         switch (m.cmd) {
         case "config":
             cfg = m.config;
+            syncTiling();
             break;
         case "zones":
             reportZones();
@@ -466,6 +468,393 @@ Item {
         ls[index].manage(w);
     }
 
+    // ----------------------------------------------------------- tiling --
+    // Optional automatic tiling, off unless turned on in the settings. Each
+    // screen and desktop has a binary tree of windows. A new window takes half
+    // of the window that had focus, split along its longer side ("dwindle").
+    // Leaves are `{ w: id }`, splits `{ a, b, ratio, dir }` with dir 0 =
+    // along the longer side, 1 = side by side, 2 = on top of each other.
+
+    property var tileTrees: ({})   // key -> root node
+    property var tiledIn: ({})     // window id -> key
+    property var lastFocus: ({})   // key -> window id
+    property bool tilingBusy: false
+
+    function tilingOn() {
+        return cfg.tiling === true;
+    }
+
+    function wsKey(w) {
+        return (w.output ? w.output.name : "") + "\n" + deskOf(w).id;
+    }
+
+    function globMatch(p, t) {
+        const re = new RegExp("^" + p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$", "i");
+        return re.test(t);
+    }
+
+    function tileable(w) {
+        if (!managed(w) || !w.moveable || !w.resizeable) return false;
+        if (w.onAllDesktops || w.desktops.length !== 1 || w.tile) return false;
+        const tr = trackers[wid(w)];
+        if (tr && tr.floating) return false;
+        // Fixed-size windows (most dialogs, splash screens) float.
+        const min = w.minSize, max = w.maxSize;
+        if (min && max && max.width > 0 && max.height > 0
+            && max.width <= min.width && max.height <= min.height) return false;
+        const cls = String(w.resourceClass).toLowerCase();
+        const patterns = cfg["float"] || [];
+        for (let i = 0; i < patterns.length; i++) {
+            if (globMatch(patterns[i], cls)) return false;
+        }
+        return true;
+    }
+
+    function isLeaf(n) {
+        return n.w !== undefined;
+    }
+
+    function findLeaf(n, id) {
+        if (!n || id === undefined) return null;
+        if (isLeaf(n)) return n.w === id ? n : null;
+        return findLeaf(n.a, id) || findLeaf(n.b, id);
+    }
+
+    function lastLeaf(n) {
+        return isLeaf(n) ? n : lastLeaf(n.b);
+    }
+
+    // The splits from the root down to the window, with the side it is on.
+    function pathTo(n, id, out) {
+        if (isLeaf(n)) return n.w === id ? out : null;
+        out.push({ node: n, inA: true });
+        if (pathTo(n.a, id, out)) return out;
+        out[out.length - 1].inA = false;
+        if (pathTo(n.b, id, out)) return out;
+        out.pop();
+        return null;
+    }
+
+    function tileInsert(w, under) {
+        const id = wid(w);
+        if (tiledIn[id]) return;
+        const tr = trackers[id];
+        if (tr && !tr.preTile) {
+            const g = w.frameGeometry;
+            tr.preTile = { x: g.x, y: g.y, width: g.width, height: g.height };
+        }
+        const key = wsKey(w);
+        const leaf = { w: id };
+        const top = tileTrees[key];
+        if (!top) {
+            tileTrees[key] = leaf;
+        } else {
+            const target = findLeaf(top, under) || findLeaf(top, lastFocus[key]) || lastLeaf(top);
+            const old = { w: target.w };
+            delete target.w;
+            target.a = old;
+            target.b = leaf;
+            target.ratio = 0.5;
+            target.dir = 0;
+        }
+        tiledIn[id] = key;
+        relayout(key);
+    }
+
+    function tileRemove(id) {
+        const key = tiledIn[id];
+        if (!key) return;
+        delete tiledIn[id];
+        if (lastFocus[key] === id) delete lastFocus[key];
+        const top = tileTrees[key];
+        if (isLeaf(top)) {
+            delete tileTrees[key];
+            return;
+        }
+        const path = pathTo(top, id, []);
+        if (!path || !path.length) return;
+        const step = path[path.length - 1];
+        const p = step.node;
+        const sibling = step.inA ? p.b : p.a;
+        delete p.a; delete p.b; delete p.ratio; delete p.dir; delete p.side; delete p.rect;
+        for (const k in sibling) p[k] = sibling[k];
+        relayout(key);
+    }
+
+    function shown(n) {
+        if (isLeaf(n)) {
+            const w = windowById(n.w);
+            return !!w && !w.deleted && !w.minimized;
+        }
+        return shown(n.a) || shown(n.b);
+    }
+
+    function place(n, r, gap, out) {
+        if (isLeaf(n)) {
+            out.push({ id: n.w, r: r });
+            return;
+        }
+        const sa = shown(n.a), sb = shown(n.b);
+        if (!sa && !sb) return;
+        if (!sb) { place(n.a, r, gap, out); return; }
+        if (!sa) { place(n.b, r, gap, out); return; }
+        const side = n.dir === 1 ? true : n.dir === 2 ? false : r.width >= r.height;
+        n.side = side;
+        n.rect = r;
+        let ra, rb;
+        if (side) {
+            const wa = Math.round((r.width - gap) * n.ratio);
+            ra = { x: r.x, y: r.y, width: wa, height: r.height };
+            rb = { x: r.x + wa + gap, y: r.y, width: r.width - wa - gap, height: r.height };
+        } else {
+            const ha = Math.round((r.height - gap) * n.ratio);
+            ra = { x: r.x, y: r.y, width: r.width, height: ha };
+            rb = { x: r.x, y: r.y + ha + gap, width: r.width, height: r.height - ha - gap };
+        }
+        place(n.a, ra, gap, out);
+        place(n.b, rb, gap, out);
+    }
+
+    function relayout(key) {
+        const top = tileTrees[key];
+        if (!top) return;
+        const parts = key.split("\n");
+        const screen = screenByName(parts[0]);
+        const desk = desktopById(parts[1]);
+        if (!screen || !desk) return;
+        const area = Workspace.clientArea(KWin.MaximizeArea, screen, desk);
+        const o = Math.max(0, cfg.tiling_outer_gap || 0);
+        const gap = Math.max(0, cfg.tiling_gap || 0);
+        const out = [];
+        place(top, { x: area.x + o, y: area.y + o, width: area.width - 2 * o, height: area.height - 2 * o }, gap, out);
+        tilingBusy = true;
+        for (let i = 0; i < out.length; i++) {
+            const w = windowById(out[i].id);
+            const tr = trackers[out[i].id];
+            if (!w || w.deleted || w.maximizeMode !== 0 || w.fullScreen || (tr && tr.userMoving)) continue;
+            const r = out[i].r;
+            const want = Qt.rect(Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height));
+            if (tr) {
+                const t = tr.tileTarget;
+                if (!t || t.x !== want.x || t.y !== want.y || t.width !== want.width || t.height !== want.height)
+                    tr.insist = null;
+                tr.tileTarget = want;
+            }
+            const g = w.frameGeometry;
+            if (Math.abs(g.x - want.x) > 1 || Math.abs(g.y - want.y) > 1
+                || Math.abs(g.width - want.width) > 1 || Math.abs(g.height - want.height) > 1)
+                w.frameGeometry = want;
+        }
+        tilingBusy = false;
+    }
+
+    function relayoutAll() {
+        for (const key in tileTrees) relayout(key);
+    }
+
+    property var dirtyKeys: ({})
+    Timer {
+        id: relayoutTimer
+        interval: 60
+        onTriggered: {
+            const keys = root.dirtyKeys;
+            root.dirtyKeys = {};
+            for (const key in keys) root.relayout(key);
+        }
+    }
+
+    function scheduleRelayout(key) {
+        if (!key) return;
+        dirtyKeys[key] = true;
+        relayoutTimer.restart();
+    }
+
+    // Brings the tiling in line with the settings and the windows: adds what
+    // should be tiled, drops what should not, then places everything.
+    function syncTiling() {
+        if (!tilingOn()) {
+            untileAll();
+            return;
+        }
+        for (const id in tiledIn) {
+            const w = windowById(id);
+            if (!w || !tileable(w) || wsKey(w) !== tiledIn[id]) tileRemove(id);
+        }
+        const all = Workspace.windows;
+        for (let i = 0; i < all.length; i++) {
+            const w = all[i];
+            if (!tiledIn[wid(w)] && track(w) && tileable(w)) tileInsert(w);
+        }
+        relayoutAll();
+    }
+
+    // Tiling turned off: windows go back to the size and place they had.
+    function untileAll() {
+        for (const id in tiledIn) {
+            const w = windowById(id);
+            const tr = trackers[id];
+            if (w && !w.deleted && tr && tr.preTile && w.maximizeMode === 0 && !w.fullScreen) {
+                const area = Workspace.clientArea(KWin.MaximizeArea, w.output, deskOf(w));
+                const r = clampRect(tr.preTile, area);
+                w.frameGeometry = Qt.rect(r.x, r.y, r.width, r.height);
+            }
+            if (tr) tr.preTile = null;
+        }
+        tileTrees = {};
+        tiledIn = {};
+        lastFocus = {};
+    }
+
+    function tiledWindowAt(key, pos, except) {
+        for (const id in tiledIn) {
+            if (tiledIn[id] !== key || id === except) continue;
+            const w = windowById(id);
+            if (!w || w.minimized) continue;
+            const g = w.frameGeometry;
+            if (pos.x >= g.x && pos.x < g.x + g.width && pos.y >= g.y && pos.y < g.y + g.height) return id;
+        }
+        return null;
+    }
+
+    function swapTiles(key, a, b) {
+        const la = findLeaf(tileTrees[key], a), lb = findLeaf(tileTrees[key], b);
+        if (!la || !lb) return;
+        la.w = b;
+        lb.w = a;
+        relayout(key);
+    }
+
+    // Moved by hand: dropped on another tiled window swaps the two, dropped
+    // on another screen or desktop joins the tiling there, anything else
+    // snaps back. Resized by hand: the splits next to the moved edges follow.
+    function tileMovedByHand(w, start) {
+        const id = wid(w);
+        const key = tiledIn[id];
+        if (!key) return;
+        const now = wsKey(w);
+        if (now !== key) {
+            const under = tiledWindowAt(now, Workspace.cursorPos, id);
+            tileRemove(id);
+            if (tileable(w)) tileInsert(w, under);
+            return;
+        }
+        const g = w.frameGeometry;
+        const resized = start && (Math.abs(g.width - start.width) > 2 || Math.abs(g.height - start.height) > 2);
+        if (!resized) {
+            const other = tiledWindowAt(key, Workspace.cursorPos, id);
+            if (other) swapTiles(key, id, other);
+            else relayout(key);
+            return;
+        }
+        const path = pathTo(tileTrees[key], id, []) || [];
+        const gap = Math.max(0, cfg.tiling_gap || 0);
+        const edges = [
+            { moved: Math.abs(g.x + g.width - (start.x + start.width)) > 2, side: true, inA: true },
+            { moved: Math.abs(g.x - start.x) > 2, side: true, inA: false },
+            { moved: Math.abs(g.y + g.height - (start.y + start.height)) > 2, side: false, inA: true },
+            { moved: Math.abs(g.y - start.y) > 2, side: false, inA: false }
+        ];
+        for (let e = 0; e < edges.length; e++) {
+            if (!edges[e].moved) continue;
+            for (let i = path.length - 1; i >= 0; i--) {
+                const n = path[i].node;
+                if (!n.rect || n.side !== edges[e].side || path[i].inA !== edges[e].inA) continue;
+                const r = n.rect;
+                const total = (n.side ? r.width : r.height) - gap;
+                let first;
+                if (n.side) first = edges[e].inA ? g.x + g.width - r.x : g.x - gap - r.x;
+                else first = edges[e].inA ? g.y + g.height - r.y : g.y - gap - r.y;
+                if (total > 0) n.ratio = Math.max(0.1, Math.min(0.9, first / total));
+                break;
+            }
+        }
+        relayout(key);
+    }
+
+    function tileNeighbour(direction) {
+        const w = Workspace.activeWindow;
+        if (!w) return;
+        const id = wid(w);
+        const key = tiledIn[id];
+        if (!key) return;
+        const g = w.frameGeometry;
+        const cx = g.x + g.width / 2, cy = g.y + g.height / 2;
+        let best = null, bestScore = Infinity;
+        for (const other in tiledIn) {
+            if (other === id || tiledIn[other] !== key) continue;
+            const o = windowById(other);
+            if (!o || o.minimized) continue;
+            const og = o.frameGeometry;
+            const dx = og.x + og.width / 2 - cx, dy = og.y + og.height / 2 - cy;
+            const along = direction === "left" ? -dx : direction === "right" ? dx : direction === "up" ? -dy : dy;
+            const across = (direction === "left" || direction === "right") ? Math.abs(dy) : Math.abs(dx);
+            if (along <= 1) continue;
+            const score = along + 2 * across;
+            if (score < bestScore) { bestScore = score; best = other; }
+        }
+        if (best) swapTiles(key, id, best);
+    }
+
+    function toggleFloating() {
+        const w = Workspace.activeWindow;
+        if (!w || !tilingOn()) return;
+        const tr = track(w);
+        if (!tr) return;
+        const id = wid(w);
+        if (tiledIn[id]) {
+            tr.floating = true;
+            tileRemove(id);
+            const area = Workspace.clientArea(KWin.MaximizeArea, w.output, deskOf(w));
+            const size = tr.preTile || { width: area.width / 2, height: area.height / 2 };
+            const width = Math.min(size.width, area.width), height = Math.min(size.height, area.height);
+            w.frameGeometry = Qt.rect(Math.round(area.x + (area.width - width) / 2),
+                                      Math.round(area.y + (area.height - height) / 2), width, height);
+            tr.preTile = null;
+        } else {
+            tr.floating = false;
+            if (w.maximizeMode !== 0) w.setMaximize(false, false);
+            if (tileable(w)) tileInsert(w);
+        }
+    }
+
+    function toggleSplit() {
+        const w = Workspace.activeWindow;
+        if (!w) return;
+        const id = wid(w);
+        const key = tiledIn[id];
+        if (!key) return;
+        const path = pathTo(tileTrees[key], id, []);
+        if (!path || !path.length) return;
+        const n = path[path.length - 1].node;
+        n.dir = n.side === false ? 1 : 2;
+        relayout(key);
+    }
+
+    // A tiled window changed by itself or through KWin.
+    function tiledWindowChanged(tr) {
+        const w = tr.win;
+        const id = wid(w);
+        const key = tiledIn[id];
+        if (!key || tr.userMoving) return;
+        if (!tileable(w) || wsKey(w) !== key) {
+            // Into a zone, onto all desktops, to another screen or desktop.
+            tileRemove(id);
+            if (tilingOn() && tileable(w)) tileInsert(w);
+            return;
+        }
+        if (tilingBusy || w.maximizeMode !== 0 || w.fullScreen) return;
+        const g = w.frameGeometry, t = tr.tileTarget;
+        if (t && Math.abs(g.x - t.x) <= 1 && Math.abs(g.y - t.y) <= 1
+            && Math.abs(g.width - t.width) <= 1 && Math.abs(g.height - t.height) <= 1) return;
+        // A window that keeps answering with the same size (a minimum size
+        // larger than its tile) is left at that size instead of fought.
+        const now = { x: g.x, y: g.y, width: g.width, height: g.height };
+        const last = tr.insist;
+        if (last && last.width === now.width && last.height === now.height) return;
+        tr.insist = now;
+        scheduleRelayout(key);
+    }
+
     // --------------------------------------------------------- tracking --
 
     Component {
@@ -484,6 +873,13 @@ Item {
             property bool userPos: false
             property bool userSize: false
             property var moveStart: null
+            // Automatic tiling: taken out by hand, the size before tiling,
+            // where the tiling last put it, and a size it keeps insisting on.
+            property bool floating: false
+            property var preTile: null
+            property var tileTarget: null
+            property var insist: null
+            property var tileMoveStart: null
 
             function snapshotNormal() {
                 const g = win.frameGeometry;
@@ -504,6 +900,12 @@ Item {
             function changed() {
                 if (!freeze && plainState()) snapshotNormal();
                 saveTimer.restart();
+                if (root.tiledIn[root.wid(win)]) root.tiledWindowChanged(tracker);
+            }
+
+            function tilingStateChanged() {
+                const key = root.tiledIn[root.wid(win)];
+                if (key) root.scheduleRelayout(key);
             }
 
             Timer {
@@ -546,19 +948,28 @@ Item {
                 target: tracker.win
                 function onFrameGeometryChanged() { tracker.changed(); }
                 function onTileChanged() { tracker.changed(); }
-                function onFullScreenChanged() { tracker.changed(); }
+                function onFullScreenChanged() { tracker.changed(); tracker.tilingStateChanged(); }
                 function onDesktopsChanged() { tracker.changed(); }
                 function onOutputChanged() { tracker.changed(); }
-                function onMinimizedChanged() { tracker.changed(); }
+                function onMinimizedChanged() { tracker.changed(); tracker.tilingStateChanged(); }
                 function onKeepAboveChanged() { tracker.changed(); }
                 function onInteractiveMoveResizeStarted() {
                     tracker.userMoving = true;
                     const g = tracker.win.frameGeometry;
+                    tracker.tileMoveStart = { x: g.x, y: g.y, width: g.width, height: g.height };
                     tracker.moveStart = tracker.plainState()
                         ? { x: g.x, y: g.y, width: g.width, height: g.height } : null;
                 }
                 function onInteractiveMoveResizeFinished() {
                     tracker.userMoving = false;
+                    // A tiled window moved by hand stays tiled; its place or
+                    // size is not remembered as set by hand.
+                    if (root.tiledIn[root.wid(tracker.win)]) {
+                        tracker.moveStart = null;
+                        root.tileMovedByHand(tracker.win, tracker.tileMoveStart);
+                        tracker.changed();
+                        return;
+                    }
                     // Dropped into a zone or snapped to maximised: that is
                     // remembered as such, not as a size.
                     if (tracker.plainState()) {
@@ -587,6 +998,7 @@ Item {
                 function onMaximizedChanged() {
                     const w = tracker.win;
                     if (w.maximizeMode === 0) tracker.freeze = false;
+                    tracker.tilingStateChanged();
                     if (tracker.backToTile && tracker.savedTile && root.cfg.zone_after_unmaximize) {
                         const t = tracker.savedTile;
                         tracker.savedTile = null;
@@ -614,13 +1026,28 @@ Item {
         target: Workspace
         function onWindowAdded(w) {
             if (!root.track(w) || !root.managed(w) || !root.connected) return;
+            if (root.tilingOn() && root.tileable(w)) root.tileInsert(w);
             root.call("Opened", [JSON.stringify(root.info(w))], function (ret) {
                 if (!ret) return;
-                try { root.startRestore(w, JSON.parse(ret)); } catch (e) { console.log("tessera: " + e); }
+                try {
+                    let r = JSON.parse(ret);
+                    // A tiled window keeps only its desktop; the tiling
+                    // decides where it goes and how large it is.
+                    if (root.tiledIn[root.wid(w)])
+                        r = { placement: r.placement, desktop: r.desktop };
+                    root.startRestore(w, r);
+                } catch (e) { console.log("tessera: " + e); }
             });
+        }
+        function onWindowActivated(w) {
+            if (!w) return;
+            const id = root.wid(w);
+            const key = root.tiledIn[id];
+            if (key) root.lastFocus[key] = id;
         }
         function onWindowRemoved(w) {
             const id = root.wid(w);
+            root.tileRemove(id);
             if (root.connected && root.remembered(w)) {
                 try { root.call("Closed", [JSON.stringify(root.info(w))]); } catch (e) { console.log("tessera: " + e); }
             }
@@ -630,8 +1057,8 @@ Item {
                 t.destroy();
             }
         }
-        function onScreensChanged() { root.sendTopology(); }
-        function onDesktopsChanged() { root.sendTopology(); }
+        function onScreensChanged() { root.sendTopology(); root.syncTiling(); }
+        function onDesktopsChanged() { root.sendTopology(); root.syncTiling(); }
     }
 
     function sendTopology() {
@@ -696,6 +1123,35 @@ Item {
         onActivated: {
             const w = Workspace.activeWindow;
             if (w && w.tile) w.tile.unmanage(w);
+        }
+    }
+    ShortcutHandler {
+        name: "Tessera: Toggle tiling"
+        text: "Tessera: Turn automatic tiling on or off"
+        sequence: "Meta+Ctrl+Alt+A"
+        onActivated: root.call("Shortcut", ["tiling"])
+    }
+    ShortcutHandler {
+        name: "Tessera: Float window"
+        text: "Tessera: Take the window out of the tiling or back in"
+        sequence: "Meta+Ctrl+Alt+F"
+        onActivated: root.toggleFloating()
+    }
+    ShortcutHandler {
+        name: "Tessera: Toggle split"
+        text: "Tessera: Split the window's tile the other way"
+        sequence: "Meta+Ctrl+Alt+J"
+        onActivated: root.toggleSplit()
+    }
+    Instantiator {
+        model: [["left", "Left"], ["right", "Right"], ["up", "Up"], ["down", "Down"]]
+        delegate: ShortcutHandler {
+            required property var modelData
+            name: "Tessera: Swap " + modelData[0]
+            text: "Tessera: Swap the window with the tiled window " + (modelData[0] === "up" ? "above"
+                  : modelData[0] === "down" ? "below" : "to the " + modelData[0])
+            sequence: "Meta+Shift+Alt+" + modelData[1]
+            onActivated: root.tileNeighbour(modelData[0])
         }
     }
     Instantiator {

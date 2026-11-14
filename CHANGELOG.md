@@ -2,6 +2,15 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+- Automatic tiling, off by default (Settings → Automatic tiling or
+  Meta+Ctrl+Alt+A). Each new window takes half of the focused one, split along
+  its longer side. Adjustable gaps, swapping with Meta+Shift+Alt+Arrows or by
+  dragging, floating single windows with Meta+Ctrl+Alt+F, changing the split
+  direction with Meta+Ctrl+Alt+J. Programs left alone stay floating.
+
 ## 0.1.2 — 2026-11-09
 
 ### Changed

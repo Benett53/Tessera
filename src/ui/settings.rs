@@ -81,6 +81,45 @@ impl TesseraApp {
             );
         });
 
+        widgets::section(ui, &palette, "Automatic tiling");
+        widgets::card(ui, &palette, |ui| {
+            let mut tiling = s.tiling;
+            widgets::setting_row(
+                ui,
+                &palette,
+                "Tile windows automatically",
+                "Each new window takes half of the focused one. Programs left alone stay floating. Meta+Ctrl+Alt+A turns it on or off",
+                |ui| {
+                    if widgets::toggle(ui, &palette, &mut tiling).changed() {
+                        self.update_settings(|s| s.tiling = tiling);
+                    }
+                },
+            );
+            type Gap = fn(&mut Settings) -> &mut u32;
+            let gaps: [(&str, Gap); 2] = [
+                ("Space between windows", |s| &mut s.tiling_gap),
+                ("Space at the screen edges", |s| &mut s.tiling_outer_gap),
+            ];
+            for (title, field) in gaps {
+                widgets::separator(ui, &palette);
+                let mut copy = s.clone();
+                let mut value = *field(&mut copy);
+                widgets::setting_row(ui, &palette, title, "", |ui| {
+                    if ui
+                        .add_enabled(
+                            s.tiling,
+                            egui::Slider::new(&mut value, 0..=48)
+                                .suffix(" px")
+                                .trailing_fill(true),
+                        )
+                        .changed()
+                    {
+                        self.update_settings(|s| *field(s) = value);
+                    }
+                });
+            }
+        });
+
         widgets::section(ui, &palette, "Programs left alone");
         widgets::card(ui, &palette, |ui| {
             ui.label(

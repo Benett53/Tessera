@@ -114,7 +114,14 @@ impl Shared {
 
     fn script_config(&self) -> serde_json::Value {
         let engine = self.engine();
-        json!({ "zone_after_unmaximize": engine.settings().zone_after_unmaximize })
+        let settings = engine.settings();
+        json!({
+            "zone_after_unmaximize": settings.zone_after_unmaximize,
+            "tiling": settings.tiling,
+            "tiling_gap": settings.tiling_gap,
+            "tiling_outer_gap": settings.tiling_outer_gap,
+            "float": engine.float_patterns(),
+        })
     }
 
     pub fn refresh_caches(&self) {
@@ -302,6 +309,24 @@ impl Shared {
                     },
                 );
             }
+            "tiling" => {
+                let tiling = {
+                    let mut engine = self.engine();
+                    engine.config.settings.tiling = !engine.config.settings.tiling;
+                    engine.dirty_config = true;
+                    engine.bump();
+                    engine.config.settings.tiling
+                };
+                self.send(json!({ "cmd": "config", "config": self.script_config() }));
+                kwin::osd(
+                    "view-grid",
+                    if tiling {
+                        "Automatic tiling on"
+                    } else {
+                        "Automatic tiling off"
+                    },
+                );
+            }
             _ => {}
         }
     }
@@ -335,6 +360,9 @@ impl Shared {
                 app.pin = pin;
                 engine.dirty_windows = true;
                 engine.bump();
+                drop(engine);
+                // "Leave alone" also keeps the program out of automatic tiling.
+                self.send(json!({ "cmd": "config", "config": self.script_config() }));
             }
             Request::ForgetApp { class } => {
                 let mut engine = self.engine();

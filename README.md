@@ -24,6 +24,8 @@ open where its window was last closed.
   are not running can be started or placed when they open
 - A maximised window goes back into its zone when restored
 - Shortcuts for moving windows between zones
+- Optional automatic tiling (off by default): each new window takes half of the
+  focused one, along its longer side
 - Pause restoring from the tray, a shortcut or the command line
 - Warns about other KWin scripts that move windows too and can turn them off
 - Tray icon, start at login, updates from the settings
@@ -73,6 +75,7 @@ windows and arrangements.
 | Save all window positions | Arrangements → Save, or `Meta+Ctrl+Alt+S` |
 | Restore them | Arrangements → Restore, or `Meta+Ctrl+Alt+R` |
 | Pause restoring | Tray menu, or Overview → "Pause for now" |
+| Automatic tiling | Settings → Automatic tiling, or `Meta+Ctrl+Alt+A` |
 
 ### Shortcuts
 
@@ -84,6 +87,16 @@ windows and arrangements.
 | `Meta+Ctrl+Alt+S` | Save the quick arrangement |
 | `Meta+Ctrl+Alt+R` | Restore the quick arrangement |
 | `Meta+Ctrl+Alt+T` | Open Tessera |
+| `Meta+Ctrl+Alt+A` | Turn automatic tiling on or off |
+| `Meta+Ctrl+Alt+F` | Take the window out of the tiling, or back in |
+| `Meta+Ctrl+Alt+J` | Split the window's tile the other way |
+| `Meta+Shift+Alt+Arrows` | Swap the window with its neighbour |
+
+Moving focus between tiled windows uses KDE's own `Meta+Alt+Arrows`. With
+tiling on, dragging a tiled window onto another one swaps them, and resizing
+one moves the split next to it. Programs in the ignore list or set to "Leave
+alone", dialogs and fixed-size windows stay floating. Turning tiling off puts
+windows back at the size and place they had before.
 
 They are KWin shortcuts and can be changed in System Settings → Shortcuts →
 KWin (search for "Tessera").
@@ -117,7 +130,7 @@ left alone by default.
 
 | Part | Responsibility |
 |---|---|
-| `kwin/main.qml` | KWin script: reports windows, places them, builds tiles, registers shortcuts |
+| `kwin/main.qml` | KWin script: reports windows, places them, builds tiles, automatic tiling, registers shortcuts |
 | `src/daemon.rs` | Background service on the session bus (`app.tessera.Daemon`), tray icon |
 | `src/engine.rs` | Which remembered slot a window gets, what to restore, arrangements |
 | `src/layout.rs` | Zone layouts as a split tree, the same shape as KWin's tiles |

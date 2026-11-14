@@ -14,6 +14,11 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("Meta+Ctrl+Alt+S", "Save quick arrangement"),
     ("Meta+Ctrl+Alt+R", "Restore quick arrangement"),
     ("Meta+Ctrl+Alt+T", "Open Tessera"),
+    ("Meta+Ctrl+Alt+A", "Automatic tiling on or off"),
+    ("Meta+Ctrl+Alt+F", "Window out of the tiling or back in"),
+    ("Meta+Ctrl+Alt+J", "Split the tile the other way"),
+    ("Meta+Shift+Alt+Arrows", "Swap with the neighbouring window"),
+    ("Meta+Alt+Arrows", "Focus the neighbouring window (KDE)"),
     ("Shift while dragging", "Drop a window into a zone"),
 ];
 
